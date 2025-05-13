@@ -36,11 +36,15 @@ class MassNickname(commands.Cog):
             logger.error(f"Nickname generation failed: {e}")
             return
 
-        for member, new_nick in zip(members, nicknames):
+        # Ensure the number of nicknames matches the number of members
+        if len(nicknames) > len(members):
+            nicknames = nicknames[:len(members)]
+        for i, member in enumerate(members):
             try:
+                nickname = nicknames[i] if i < len(nicknames) else f"{theme}_{i+1}"
                 self.original_nicknames[member.id] = member.nick
-                await member.edit(nick=new_nick)
-                logger.info(f"Changed {member.display_name} to '{new_nick}'")
+                await member.edit(nick=nickname)
+                logger.info(f"Changed {member.display_name} to '{nickname}'")
             except Exception as e:
                 logger.error(f"Failed to nickname {member.display_name}: {e}")
 

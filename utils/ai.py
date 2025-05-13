@@ -11,9 +11,9 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def generate_nicknames(theme: str, count: int):
     prompt = (
-        f"Generate {count} creative and funny nicknames based on the theme: '{theme}'. "
-        "The names should be short, unique, and not include offensive content. "
-        "Return ONLY the nicknames as a comma-separated list."
+        f"Create a list of {count} unique and funny Discord nicknames based on the theme: '{theme}'. "
+        "Each nickname should be short, clever, and suitable for use as a humorous online nickname. "
+        "Do not include numbers or rankings. Return ONLY the nicknames in a comma-separated list."
     )
 
     try:
