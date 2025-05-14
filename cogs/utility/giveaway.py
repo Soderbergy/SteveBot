@@ -80,7 +80,13 @@ class Giveaway(commands.Cog):
             return
 
         view = GiveawayView(None, self.save_entries_callback)
-        embed = discord.Embed(title="🎉 Giveaway!", description=f"**Prize:** ***{prize}***", color=discord.Color.purple())
+        end_time = datetime.utcnow() + timedelta(seconds=seconds)
+        timestamp = int(end_time.timestamp())
+        embed = discord.Embed(
+            title="🎉 Giveaway!",
+            description=f"**Prize:** ***{prize}***\n\nEnds <t:{timestamp}:R> (<t:{timestamp}:f>)",
+            color=discord.Color.purple()
+        )
         embed.set_footer(text="Click the button below to enter!")
         await interaction.response.send_message(embed=embed, view=view)
         message = await interaction.original_response()
@@ -89,7 +95,6 @@ class Giveaway(commands.Cog):
 
         logger.info(f"Giveaway started by {interaction.user.display_name} for '{prize}' lasting {duration} ({seconds}s).")
 
-        end_time = datetime.utcnow() + timedelta(seconds=seconds)
         self.save_giveaway(message.id, interaction.channel.id, prize, end_time, view.entries)
         await asyncio.sleep(seconds)
 
