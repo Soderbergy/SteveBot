@@ -2,3 +2,5 @@ discord.py
 python-dotenv
 openai
 coloredlogs
+yt_dlp
+PyNaCl
