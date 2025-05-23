@@ -57,6 +57,10 @@ class YouTubeAudio(commands.Cog):
         self.is_playing = False
         self.music_channel = None
         self.idle_disconnect_task = None
+        self.saved_channel_id = None
+        self.saved_message_id = None
+        self.current_thumbnail = None
+        self.current_item = None
         self.load_music_setup()
     def save_music_setup(self):
         try:
@@ -76,22 +80,13 @@ class YouTubeAudio(commands.Cog):
             if os.path.exists(config_path):
                 with open(config_path, "r") as f:
                     config = json.load(f)
-                channel_id = config.get("channel_id")
-                message_id = config.get("message_id")
-                if channel_id:
-                    self.music_channel = self.bot.get_channel(channel_id)
-                if self.music_channel and message_id:
-                    # fetch_message must be awaited, but __init__ is not async; use asyncio.run_coroutine_threadsafe
-                    try:
-                        self.now_playing_msg = asyncio.run_coroutine_threadsafe(
-                            self.music_channel.fetch_message(message_id),
-                            self.bot.loop
-                        ).result()
-                    except Exception as e:
-                        logger.warning(f"Could not fetch saved Now Playing message: {e}")
-                logger.info("Loaded music channel and message ID.")
+                self.saved_channel_id = config.get("channel_id")
+                self.saved_message_id = config.get("message_id")
+                logger.info("Loaded saved channel and message IDs.")
         except Exception as e:
             logger.error(f"Failed to load music setup: {e}")
+            self.saved_channel_id = None
+            self.saved_message_id = None
 
     @tasks.loop(hours=6)
     async def check_cookie_freshness(self):
@@ -112,7 +107,7 @@ class YouTubeAudio(commands.Cog):
 
     def search_youtube(self, query):
         with yt_dlp.YoutubeDL({
-            'format': 'bestaudio/best',
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
             'noplaylist': True,
             'quiet': True,
             'cookiefile': 'assets/cookies.txt'
@@ -133,8 +128,10 @@ class YouTubeAudio(commands.Cog):
     async def play_next(self, interaction: discord.Interaction = None):
         if not self.queue:
             self.is_playing = False
+            self.current_thumbnail = None
+            self.current_item = None
             idle_embed = discord.Embed(title="Now Playing", description="Nothing playing yet.", color=discord.Color.greyple())
-            idle_embed.set_image(url="https://i.imgur.com/ZwBtM6K.png")
+            idle_embed.set_image(url="https://media.tenor.com/bEHtiafMq8MAAAAe/xd.png")
             try:
                 if self.now_playing_msg:
                     await self.now_playing_msg.edit(embed=idle_embed, view=MusicControls(self))
@@ -144,6 +141,7 @@ class YouTubeAudio(commands.Cog):
             return
 
         item = self.queue.pop(0)
+        self.current_item = item
         self.is_playing = True
         if self.idle_disconnect_task:
             self.idle_disconnect_task.cancel()
@@ -157,6 +155,7 @@ class YouTubeAudio(commands.Cog):
 
         embed = discord.Embed(title="Now Playing", description=item.title, color=discord.Color.green())
         embed.set_image(url=item.thumbnail)
+        self.current_thumbnail = item.thumbnail  # optional for backward compatibility
 
         # Format updated upcoming queue
         queue_preview = ""
@@ -189,8 +188,17 @@ class YouTubeAudio(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        if not self.music_channel:
-            self.load_music_setup()
+        # Only try to fetch if we have saved IDs and not already resolved
+        if self.saved_channel_id and not self.music_channel:
+            try:
+                self.music_channel = await self.bot.fetch_channel(self.saved_channel_id)
+            except Exception as e:
+                logger.warning(f"Could not fetch saved music channel: {e}")
+        if self.music_channel and self.saved_message_id and not self.now_playing_msg:
+            try:
+                self.now_playing_msg = await self.music_channel.fetch_message(self.saved_message_id)
+            except Exception as e:
+                logger.warning(f"Could not fetch saved Now Playing message: {e}")
         self.check_cookie_freshness.start()
         logger.info("YouTubeAudio cog ready.")
 
@@ -223,7 +231,53 @@ class YouTubeAudio(commands.Cog):
 
         item.requester = message.author
         self.queue.append(item)
-        await loading_msg.edit(content=f"✅ Queued: **{item.title}**")
+        await loading_msg.edit(content=f"✅ Queued: **{item.title}**", delete_after=5)
+
+        # Update the Now Playing embed queue list if a song is already playing
+        if self.is_playing and self.now_playing_msg:
+            try:
+                embed = self.now_playing_msg.embeds[0]
+                queue_preview = ""
+                if self.queue:
+                    for idx, q_item in enumerate(self.queue[:5], start=1):
+                        queue_preview += f"**{idx}.** {q_item.title} _(by {q_item.requester.display_name})_\n"
+                    if len(self.queue) > 5:
+                        queue_preview += f"...and {len(self.queue) - 5} more in the queue."
+
+                # Always use the current item's thumbnail while playing
+                thumb_url = self.current_item.thumbnail if self.current_item else None
+
+                updated_embed = discord.Embed(title=embed.title, description=embed.description, color=embed.color)
+                if thumb_url:
+                    updated_embed.set_image(url=thumb_url)
+
+                if queue_preview:
+                    updated_embed.add_field(name="Up Next", value=queue_preview, inline=False)
+
+                await self.now_playing_msg.edit(embed=updated_embed, view=MusicControls(self))
+            except Exception as e:
+                logger.warning(f"Failed to update embed queue: {e}")
+
+        # Ensure Now Playing embed exists before first playback, but don't override if something is playing
+        if not self.now_playing_msg and self.music_channel and self.queue and not self.is_playing:
+            first_item = self.queue[0]
+            embed = discord.Embed(title="Now Playing", description=first_item.title, color=discord.Color.green())
+            embed.set_image(url=first_item.thumbnail)
+
+            queue_preview = ""
+            if len(self.queue) > 1:
+                for idx, q_item in enumerate(self.queue[1:6], start=1):
+                    queue_preview += f"**{idx}.** {q_item.title} _(by {q_item.requester.display_name})_\n"
+                if len(self.queue) > 6:
+                    queue_preview += f"...and {len(self.queue) - 6} more in the queue."
+                embed.add_field(name="Up Next", value=queue_preview, inline=False)
+
+            try:
+                self.now_playing_msg = await self.music_channel.send(embed=embed, view=MusicControls(self))
+                self.save_music_setup()
+                logger.info("Created initial Now Playing embed on first queue.")
+            except Exception as e:
+                logger.error(f"Failed to post Now Playing embed on first queue: {e}")
 
         if not self.vc or not self.vc.is_connected():
             self.vc = await message.author.voice.channel.connect()
@@ -269,7 +323,7 @@ class YouTubeAudio(commands.Cog):
 
         # Post a placeholder "Now Playing" embed with controls
         embed = discord.Embed(title="Now Playing", description="Nothing playing yet.", color=discord.Color.greyple())
-        embed.set_image(url="https://i.imgur.com/ZwBtM6K.png")  # Generic music image or your custom placeholder
+        embed.set_image(url="https://media.tenor.com/bEHtiafMq8MAAAAe/xd.png")  # Generic music image or your custom placeholder
         try:
             if not self.now_playing_msg:
                 self.now_playing_msg = await self.music_channel.send(embed=embed, view=MusicControls(self))
