@@ -113,7 +113,9 @@ class YouTubeAudio(commands.Cog):
             'cookiefile': 'assets/cookies.txt'
         }) as ydl:
             try:
-                info = ydl.extract_info(f"ytsearch:{query}", download=False)['entries'][0]
+                info = ydl.extract_info(query, download=False)
+                if 'entries' in info:
+                    info = info['entries'][0]
                 return MusicQueueItem(
                     url=info['id'],
                     title=info['title'],
@@ -222,7 +224,11 @@ class YouTubeAudio(commands.Cog):
             await loading_msg.delete()
             return
 
-        item = self.search_youtube(query)
+        # Detect if the query is a YouTube link
+        if "youtube.com/watch" in query or "youtu.be/" in query:
+            item = self.search_youtube(query)
+        else:
+            item = self.search_youtube(f"ytsearch:{query}")
         if not item:
             await loading_msg.edit(content="❌ Could not find a result for that query.")
             await asyncio.sleep(5)
