@@ -62,15 +62,25 @@ class SteamTracker(commands.Cog):
         ids_param = ",".join(ids_to_fetch)
         url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={steam_api_key}&steamids={ids_param}"
         await asyncio.sleep(1)
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                data = await resp.json()
-                for player in data.get("response", {}).get("players", []):
-                    sid = player["steamid"]
-                    self.summary_cache[sid] = player
-                    self.cache_timestamps[sid] = current_time
-                summaries = {**cached, **{p["steamid"]: p for p in data.get("response", {}).get("players", [])}}
-                return summaries
+        retries = 3
+        backoff = 5
+        for attempt in range(retries):
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status == 429:
+                        logger.warning(f"Rate limited when fetching player summaries. Retrying in {backoff} seconds...")
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+                    data = await resp.json()
+                    for player in data.get("response", {}).get("players", []):
+                        sid = player["steamid"]
+                        self.summary_cache[sid] = player
+                        self.cache_timestamps[sid] = current_time
+                    summaries = {**cached, **{p["steamid"]: p for p in data.get("response", {}).get("players", [])}}
+                    return summaries
+        logger.error("Failed to fetch player summaries after multiple retries.")
+        return cached
 
     @tasks.loop(seconds=CHECK_INTERVAL)
     async def check_steam_status(self):
