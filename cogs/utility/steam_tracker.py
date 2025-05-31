@@ -1,3 +1,4 @@
+import os
 import discord
 from discord.ext import commands, tasks
 import json
@@ -7,7 +8,6 @@ import logging
 
 logger = logging.getLogger("S.T.E.V.E")
 
-STEAM_API_KEY = "AFDC3D2DAF8AB82426D2C2077C60C4E4"  # Replace with your actual API key
 CHECK_INTERVAL = 60  # in seconds
 
 class SteamTracker(commands.Cog):
@@ -29,7 +29,8 @@ class SteamTracker(commands.Cog):
             return {}
 
     async def fetch_player_summary(self, steam_id):
-        url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={STEAM_API_KEY}&steamids={steam_id}"
+        steam_api_key = os.getenv("STEAM_API_KEY")
+        url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={steam_api_key}&steamids={steam_id}"
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 data = await resp.json()
@@ -58,17 +59,26 @@ class SteamTracker(commands.Cog):
             except Exception as e:
                 logger.warning(f"Error checking Steam status for {steam_id}: {e}")
 
-    @commands.command(name="addsteamtrack")
-    @commands.has_permissions(administrator=True)
-    async def add_steam_track(self, ctx, steam_id: str):
-        """Manually add a user to track by SteamID"""
-        self.tracked_users[str(ctx.author.id)] = {
+    from discord import app_commands
+
+    @app_commands.command(name="addsteamtrack", description="Track someone by Steam ID")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def add_steam_track(self, interaction: discord.Interaction, steam_id: str):
+        self.tracked_users[str(interaction.user.id)] = {
             "steam_id": steam_id,
-            "channel_id": ctx.channel.id
+            "channel_id": interaction.channel.id
         }
         with open("data/steam_tracking.json", "w") as f:
             json.dump(self.tracked_users, f, indent=2)
-        await ctx.send(f"🛰️ Now tracking Steam activity for Steam ID `{steam_id}`.")
+        await interaction.response.send_message(f"🛰️ Now tracking Steam activity for Steam ID `{steam_id}`.")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        try:
+            synced = await self.bot.tree.sync()
+            logger.info(f"🔧 Synced {len(synced)} app commands.")
+        except Exception as e:
+            logger.error(f"Failed to sync slash commands: {e}")
 
 async def setup(bot):
     await bot.add_cog(SteamTracker(bot))
