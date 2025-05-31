@@ -78,11 +78,11 @@ class SteamTracker(commands.Cog):
                                     await message.edit(embed=embed)
                             except discord.NotFound:
                                 # Message was deleted or not found
-                                embed = discord.Embed(title=f"{current_game} Launches", description=user_line, color=discord.Color.green())
+                                embed = discord.Embed(title=f"{current_game} - Players", description=user_line, color=discord.Color.green())
                                 message = await channel.send(embed=embed)
                                 self.active_embeds[embed_key] = message.id
                         else:
-                            embed = discord.Embed(title=f"{current_game} Launches", description=user_line, color=discord.Color.green())
+                            embed = discord.Embed(title=f"{current_game} - Players", description=user_line, color=discord.Color.green())
                             message = await channel.send(embed=embed)
                             self.active_embeds[embed_key] = message.id
                     self.last_statuses[user_id] = current_game.lower()
