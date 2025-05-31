@@ -133,12 +133,7 @@ class SteamTracker(commands.Cog):
                 names.append(personaname)
                 statuses.append(display_status)
 
-                if current_game and summary.get("gameid"):
-                    app_id = summary["gameid"]
-                    icon_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
-                    icons.append(f"{icon_url}")
-                else:
-                    icons.append("—")
+                icons.append("—")
 
                 # Track the most recently active game for thumbnail
                 if current_game and any(name in current_game.lower() for name in TRACKED_GAMES):
@@ -157,11 +152,6 @@ class SteamTracker(commands.Cog):
             embed.add_field(name="👤 Person", value="\n".join(names) or "—", inline=True)
             embed.add_field(name="🎮 Status", value="\n".join(statuses) or "—", inline=True)
             embed.add_field(name="📸 Icon", value="\n".join(icons) or "—", inline=True)
-            if most_recent_summary:
-                app_id = most_recent_summary.get("gameid")
-                if app_id:
-                    icon_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
-                    embed.set_thumbnail(url=icon_url)
             # Fetch or create the embed message for this channel
             message_id = self.channel_embeds.get(str(channel_id))
             channel = None
