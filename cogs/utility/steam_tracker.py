@@ -68,27 +68,60 @@ class SteamTracker(commands.Cog):
                         channel = None
                     embed_key = (discord_channel_id, current_game.lower())
                     if channel:
-                        user_line = f"🎮 **{summary['personaname']}**"
+                        # Build the tracked players list (all tracked for this channel)
+                        tracked_names = []
+                        for uid, inf in self.tracked_users.items():
+                            if inf["channel_id"] == discord_channel_id:
+                                # Attempt to get their persona name if available
+                                try:
+                                    s = await self.fetch_player_summary(inf["steam_id"])
+                                    tracked_names.append(s.get("personaname", f"ID:{inf['steam_id']}"))
+                                except Exception:
+                                    tracked_names.append(f"ID:{inf['steam_id']}")
+                        # Build the currently playing list for this game in this channel
+                        currently_playing = []
+                        for uid, inf in self.tracked_users.items():
+                            if inf["channel_id"] == discord_channel_id:
+                                try:
+                                    s = await self.fetch_player_summary(inf["steam_id"])
+                                    cg = s.get("gameextrainfo")
+                                    if cg and cg.lower() == current_game.lower():
+                                        currently_playing.append(f"{s.get('personaname', f'ID:{inf['steam_id']}')} — {cg}")
+                                except Exception:
+                                    continue
+                        user_line = "\n".join(currently_playing) if currently_playing else "No one currently playing."
                         if embed_key in self.active_embeds:
                             try:
                                 message = await channel.fetch_message(self.active_embeds[embed_key])
                                 embed = message.embeds[0]
-                                if user_line not in embed.description:
-                                    embed.description += f"\n{user_line}"
-                                    await message.edit(embed=embed)
+                                # Rebuild both fields
+                                embed.clear_fields()
+                                embed.title = f"{current_game} - Tracking"
+                                embed.add_field(name="Tracked Players", value="\n".join(tracked_names) if tracked_names else "None", inline=False)
+                                embed.add_field(name="Currently Playing", value=user_line, inline=False)
+                                await message.edit(embed=embed)
                             except discord.NotFound:
                                 # Message was deleted or not found
-                                embed = discord.Embed(title=f"{current_game} - Players", description=user_line, color=discord.Color.green())
+                                embed = discord.Embed(title=f"{current_game} - Tracking", color=discord.Color.green())
+                                app_id = summary.get("gameid")
+                                if app_id:
+                                    embed.set_thumbnail(url=f"https://cdn.cloudflare.steamcommunity/public/images/apps/{app_id}/{summary.get('img_icon_url')}.jpg")
+                                embed.add_field(name="Tracked Players", value="\n".join(tracked_names) if tracked_names else "None", inline=False)
+                                embed.add_field(name="Currently Playing", value=user_line, inline=False)
                                 message = await channel.send(embed=embed)
                                 self.active_embeds[embed_key] = message.id
                         else:
-                            embed = discord.Embed(title=f"{current_game} - Players", description=user_line, color=discord.Color.green())
+                            embed = discord.Embed(title=f"{current_game} - Tracking", color=discord.Color.green())
+                            app_id = summary.get("gameid")
+                            if app_id:
+                                embed.set_thumbnail(url=f"https://cdn.cloudflare.steamcommunity/public/images/apps/{app_id}/{summary.get('img_icon_url')}.jpg")
+                            embed.add_field(name="Tracked Players", value="\n".join(tracked_names) if tracked_names else "None", inline=False)
+                            embed.add_field(name="Currently Playing", value=user_line, inline=False)
                             message = await channel.send(embed=embed)
                             self.active_embeds[embed_key] = message.id
                     self.last_statuses[user_id] = current_game.lower()
                 elif not current_game:
-                    # logger.info(f"{summary['personaname']} is not currently in a tracked game.")
-                    # Clear user from active embeds
+                    # Remove user from "Currently Playing" field of all relevant embeds
                     for (channel_id, game_name), message_id in list(self.active_embeds.items()):
                         if channel_id != discord_channel_id:
                             continue
@@ -96,14 +129,39 @@ class SteamTracker(commands.Cog):
                             channel = await self.bot.fetch_channel(channel_id)
                             message = await channel.fetch_message(message_id)
                             embed = message.embeds[0]
-                            user_line = f"🎮 **{summary['personaname']}**"
-                            if user_line in embed.description:
-                                embed.description = embed.description.replace(f"\n{user_line}", "")
-                                await message.edit(embed=embed)
-                                # Remove embed if empty
-                                if not embed.description.strip():
-                                    await message.delete()
-                                    del self.active_embeds[(channel_id, game_name)]
+                            # Rebuild the currently playing list for this game in this channel
+                            currently_playing = []
+                            for uid, inf in self.tracked_users.items():
+                                if inf["channel_id"] == channel_id:
+                                    try:
+                                        s = await self.fetch_player_summary(inf["steam_id"])
+                                        cg = s.get("gameextrainfo")
+                                        if cg and cg.lower() == game_name:
+                                            currently_playing.append(f"{s.get('personaname', f'ID:{inf['steam_id']}')} — {cg}")
+                                    except Exception:
+                                        continue
+                            user_line = "\n".join(currently_playing) if currently_playing else "No one currently playing."
+                            # Also rebuild tracked players field
+                            tracked_names = []
+                            for uid, inf in self.tracked_users.items():
+                                if inf["channel_id"] == channel_id:
+                                    try:
+                                        s = await self.fetch_player_summary(inf["steam_id"])
+                                        tracked_names.append(s.get("personaname", f"ID:{inf['steam_id']}"))
+                                    except Exception:
+                                        tracked_names.append(f"ID:{inf['steam_id']}")
+                            embed.clear_fields()
+                            embed.title = f"{current_game} - Tracking"
+                            app_id = summary.get("gameid")
+                            if app_id:
+                                embed.set_thumbnail(url=f"https://cdn.cloudflare.steamcommunity/public/images/apps/{app_id}/{summary.get('img_icon_url')}.jpg")
+                            embed.add_field(name="Tracked Players", value="\n".join(tracked_names) if tracked_names else "None", inline=False)
+                            embed.add_field(name="Currently Playing", value=user_line, inline=False)
+                            await message.edit(embed=embed)
+                            # Remove embed if no one is playing this game anymore
+                            if not currently_playing:
+                                await message.delete()
+                                del self.active_embeds[(channel_id, game_name)]
                         except Exception as e:
                             logger.warning(f"Error clearing embed for {summary['personaname']} in {game_name}: {e}")
                     self.last_statuses[user_id] = None
