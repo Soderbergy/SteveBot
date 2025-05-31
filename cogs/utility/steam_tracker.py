@@ -115,10 +115,14 @@ class SteamTracker(commands.Cog):
     @app_commands.command(name="addsteamtrack", description="Track someone by Steam ID")
     @app_commands.checks.has_permissions(administrator=True)
     async def add_steam_track(self, interaction: discord.Interaction, steam_id: str):
-        self.tracked_users[str(interaction.user.id)] = {
-            "steam_id": steam_id,
-            "channel_id": interaction.channel.id
-        }
+        if str(interaction.user.id) not in self.tracked_users:
+            self.tracked_users[str(interaction.user.id)] = {
+                "steam_id": steam_id,
+                "channel_id": interaction.channel.id
+            }
+        else:
+            self.tracked_users[str(interaction.user.id)]["steam_id"] = steam_id
+            self.tracked_users[str(interaction.user.id)]["channel_id"] = interaction.channel.id
         with open("data/steam_tracking.json", "w") as f:
             json.dump(self.tracked_users, f, indent=2)
         await interaction.response.send_message(f"🛰️ Now tracking Steam activity for Steam ID `{steam_id}`.")
