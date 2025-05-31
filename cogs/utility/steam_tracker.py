@@ -54,7 +54,10 @@ class SteamTracker(commands.Cog):
                     logger.info(f"Match found for {summary['personaname']} playing {current_game}")
                     # Post notification
                     channel = self.bot.get_channel(discord_channel_id)
+                    if not channel:
+                        logger.warning(f"Could not find Discord channel with ID {discord_channel_id}.")
                     if channel:
+                        logger.info(f"Sending message to channel {channel.id} about {summary['personaname']} launching {current_game}")
                         await channel.send(f"🎮 **{summary['personaname']}** just launched **{current_game}**!")
                     self.last_statuses[user_id] = current_game.lower()
                 elif not current_game:
