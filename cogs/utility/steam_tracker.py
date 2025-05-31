@@ -136,7 +136,7 @@ class SteamTracker(commands.Cog):
                 if current_game and summary.get("gameid"):
                     app_id = summary["gameid"]
                     icon_url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg"
-                    icons.append(f"[🖼️]({icon_url})")
+                    icons.append(f"{icon_url}")
                 else:
                     icons.append("—")
 
