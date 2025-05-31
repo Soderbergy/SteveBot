@@ -17,6 +17,9 @@ class SteamTracker(commands.Cog):
         self.tracked_users = self.load_tracked_users()
         self.last_statuses = {}
         self.active_embeds = {}  # {(channel_id, game_name): message_id}
+        self.summary_cache = {}
+        self.cache_timestamps = {}
+        self.cache_duration = 120  # seconds
         self.check_steam_status.start()
 
     def cog_unload(self):
@@ -30,24 +33,49 @@ class SteamTracker(commands.Cog):
             logger.warning(f"Couldn't load steam_tracking.json: {e}")
             return {}
 
-    async def fetch_player_summary(self, steam_id):
+    async def fetch_player_summaries(self, steam_ids):
         steam_api_key = os.getenv("STEAM_API_KEY")
-        url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={steam_api_key}&steamids={steam_id}"
+        current_time = asyncio.get_event_loop().time()
+
+        cached = {sid: self.summary_cache[sid] for sid in steam_ids
+                  if sid in self.summary_cache and (current_time - self.cache_timestamps[sid]) < self.cache_duration}
+        ids_to_fetch = [sid for sid in steam_ids if sid not in cached]
+
+        if not ids_to_fetch:
+            return cached
+
+        ids_param = ",".join(ids_to_fetch)
+        url = f"https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={steam_api_key}&steamids={ids_param}"
+        await asyncio.sleep(1)
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 data = await resp.json()
-                return data.get("response", {}).get("players", [])[0]
+                for player in data.get("response", {}).get("players", []):
+                    sid = player["steamid"]
+                    self.summary_cache[sid] = player
+                    self.cache_timestamps[sid] = current_time
+                summaries = {**cached, **{p["steamid"]: p for p in data.get("response", {}).get("players", [])}}
+                return summaries
 
     @tasks.loop(seconds=CHECK_INTERVAL)
     async def check_steam_status(self):
+        # Gather all unique steam IDs to batch fetch
+        unique_steam_ids = list({info["steam_id"] for info in self.tracked_users.values()})
+        try:
+            summaries = await self.fetch_player_summaries(unique_steam_ids)
+        except Exception as e:
+            logger.warning(f"Error fetching player summaries: {e}")
+            summaries = {}
+
         for user_id, info in self.tracked_users.items():
             steam_id = info["steam_id"]
             discord_channel_id = info["channel_id"]
             last_game = self.last_statuses.get(user_id, None)
 
             try:
-                summary = await self.fetch_player_summary(steam_id)
-                # Removed noisy summary fetch log
+                summary = summaries.get(steam_id)
+                if not summary:
+                    continue
                 current_game = summary.get("gameextrainfo")
 
                 TRACKED_GAMES = ["squad", "dayz", "rainbow six siege"]
@@ -72,23 +100,20 @@ class SteamTracker(commands.Cog):
                         tracked_names = []
                         for uid, inf in self.tracked_users.items():
                             if inf["channel_id"] == discord_channel_id:
-                                # Attempt to get their persona name if available
-                                try:
-                                    s = await self.fetch_player_summary(inf["steam_id"])
+                                s = summaries.get(inf["steam_id"])
+                                if s:
                                     tracked_names.append(s.get("personaname", f"ID:{inf['steam_id']}"))
-                                except Exception:
+                                else:
                                     tracked_names.append(f"ID:{inf['steam_id']}")
                         # Build the currently playing list for this game in this channel
                         currently_playing = []
                         for uid, inf in self.tracked_users.items():
                             if inf["channel_id"] == discord_channel_id:
-                                try:
-                                    s = await self.fetch_player_summary(inf["steam_id"])
+                                s = summaries.get(inf["steam_id"])
+                                if s:
                                     cg = s.get("gameextrainfo")
                                     if cg and cg.lower() == current_game.lower():
                                         currently_playing.append(f"{s.get('personaname', f'ID:{inf['steam_id']}')} — {cg}")
-                                except Exception:
-                                    continue
                         user_line = "\n".join(currently_playing) if currently_playing else "No one currently playing."
                         if embed_key in self.active_embeds:
                             try:
@@ -104,8 +129,10 @@ class SteamTracker(commands.Cog):
                                 # Message was deleted or not found
                                 embed = discord.Embed(title=f"{current_game} - Tracking", color=discord.Color.green())
                                 app_id = summary.get("gameid")
-                                if app_id:
-                                    embed.set_thumbnail(url=f"https://cdn.cloudflare.steamcommunity/public/images/apps/{app_id}/{summary.get('img_icon_url')}.jpg")
+                                icon_hash = summary.get("img_icon_url")
+                                if app_id and icon_hash:
+                                    icon_url = f"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{app_id}/{icon_hash}.jpg"
+                                    embed.set_thumbnail(url=icon_url)
                                 embed.add_field(name="Tracked Players", value="\n".join(tracked_names) if tracked_names else "None", inline=False)
                                 embed.add_field(name="Currently Playing", value=user_line, inline=False)
                                 message = await channel.send(embed=embed)
@@ -113,8 +140,10 @@ class SteamTracker(commands.Cog):
                         else:
                             embed = discord.Embed(title=f"{current_game} - Tracking", color=discord.Color.green())
                             app_id = summary.get("gameid")
-                            if app_id:
-                                embed.set_thumbnail(url=f"https://cdn.cloudflare.steamcommunity/public/images/apps/{app_id}/{summary.get('img_icon_url')}.jpg")
+                            icon_hash = summary.get("img_icon_url")
+                            if app_id and icon_hash:
+                                icon_url = f"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{app_id}/{icon_hash}.jpg"
+                                embed.set_thumbnail(url=icon_url)
                             embed.add_field(name="Tracked Players", value="\n".join(tracked_names) if tracked_names else "None", inline=False)
                             embed.add_field(name="Currently Playing", value=user_line, inline=False)
                             message = await channel.send(embed=embed)
@@ -133,28 +162,28 @@ class SteamTracker(commands.Cog):
                             currently_playing = []
                             for uid, inf in self.tracked_users.items():
                                 if inf["channel_id"] == channel_id:
-                                    try:
-                                        s = await self.fetch_player_summary(inf["steam_id"])
+                                    s = summaries.get(inf["steam_id"])
+                                    if s:
                                         cg = s.get("gameextrainfo")
                                         if cg and cg.lower() == game_name:
                                             currently_playing.append(f"{s.get('personaname', f'ID:{inf['steam_id']}')} — {cg}")
-                                    except Exception:
-                                        continue
                             user_line = "\n".join(currently_playing) if currently_playing else "No one currently playing."
                             # Also rebuild tracked players field
                             tracked_names = []
                             for uid, inf in self.tracked_users.items():
                                 if inf["channel_id"] == channel_id:
-                                    try:
-                                        s = await self.fetch_player_summary(inf["steam_id"])
+                                    s = summaries.get(inf["steam_id"])
+                                    if s:
                                         tracked_names.append(s.get("personaname", f"ID:{inf['steam_id']}"))
-                                    except Exception:
+                                    else:
                                         tracked_names.append(f"ID:{inf['steam_id']}")
                             embed.clear_fields()
                             embed.title = f"{current_game} - Tracking"
                             app_id = summary.get("gameid")
-                            if app_id:
-                                embed.set_thumbnail(url=f"https://cdn.cloudflare.steamcommunity/public/images/apps/{app_id}/{summary.get('img_icon_url')}.jpg")
+                            icon_hash = summary.get("img_icon_url")
+                            if app_id and icon_hash:
+                                icon_url = f"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{app_id}/{icon_hash}.jpg"
+                                embed.set_thumbnail(url=icon_url)
                             embed.add_field(name="Tracked Players", value="\n".join(tracked_names) if tracked_names else "None", inline=False)
                             embed.add_field(name="Currently Playing", value=user_line, inline=False)
                             await message.edit(embed=embed)
