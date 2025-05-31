@@ -15,6 +15,7 @@ class SteamTracker(commands.Cog):
         self.bot = bot
         self.tracked_users = self.load_tracked_users()
         self.last_statuses = {}
+        self.active_embeds = {}  # {(channel_id, game_name): message_id}
         self.check_steam_status.start()
 
     def cog_unload(self):
@@ -64,12 +65,46 @@ class SteamTracker(commands.Cog):
                     except Exception as e:
                         logger.warning(f"Unexpected error fetching channel {discord_channel_id}: {e}")
                         channel = None
+                    embed_key = (discord_channel_id, current_game.lower())
                     if channel:
-                        logger.info(f"Sending message to channel {channel.id} about {summary['personaname']} launching {current_game}")
-                        await channel.send(f"🎮 **{summary['personaname']}** just launched **{current_game}**!")
+                        user_line = f"🎮 **{summary['personaname']}**"
+                        if embed_key in self.active_embeds:
+                            try:
+                                message = await channel.fetch_message(self.active_embeds[embed_key])
+                                embed = message.embeds[0]
+                                if user_line not in embed.description:
+                                    embed.description += f"\n{user_line}"
+                                    await message.edit(embed=embed)
+                            except discord.NotFound:
+                                # Message was deleted or not found
+                                embed = discord.Embed(title=f"{current_game} Launches", description=user_line, color=discord.Color.green())
+                                message = await channel.send(embed=embed)
+                                self.active_embeds[embed_key] = message.id
+                        else:
+                            embed = discord.Embed(title=f"{current_game} Launches", description=user_line, color=discord.Color.green())
+                            message = await channel.send(embed=embed)
+                            self.active_embeds[embed_key] = message.id
                     self.last_statuses[user_id] = current_game.lower()
                 elif not current_game:
                     logger.info(f"{summary['personaname']} is not currently in a tracked game.")
+                    # Clear user from active embeds
+                    for (channel_id, game_name), message_id in list(self.active_embeds.items()):
+                        if channel_id != discord_channel_id:
+                            continue
+                        try:
+                            channel = await self.bot.fetch_channel(channel_id)
+                            message = await channel.fetch_message(message_id)
+                            embed = message.embeds[0]
+                            user_line = f"🎮 **{summary['personaname']}**"
+                            if user_line in embed.description:
+                                embed.description = embed.description.replace(f"\n{user_line}", "")
+                                await message.edit(embed=embed)
+                                # Remove embed if empty
+                                if not embed.description.strip():
+                                    await message.delete()
+                                    del self.active_embeds[(channel_id, game_name)]
+                        except Exception as e:
+                            logger.warning(f"Error clearing embed for {summary['personaname']} in {game_name}: {e}")
                     self.last_statuses[user_id] = None
 
             except Exception as e:
