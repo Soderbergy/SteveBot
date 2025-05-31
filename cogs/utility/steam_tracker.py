@@ -92,7 +92,9 @@ class SteamTracker(commands.Cog):
 
         for channel_id, users in channel_to_users.items():
             # Build embed content for the channel
-            lines = []
+            names = []
+            statuses = []
+            icons = []
             most_recent_game = None
             most_recent_summary = None
             most_recent_time = 0
@@ -100,8 +102,12 @@ class SteamTracker(commands.Cog):
                 steam_id = info["steam_id"]
                 summary = summaries.get(steam_id)
                 if not summary:
-                    lines.append(f"ID:{steam_id} — Not playing")
+                    names.append(f"ID:{steam_id}")
+                    statuses.append("Unknown")
+                    icons.append("—")
                     continue
+
+                personaname = summary.get("personaname", f"ID:{steam_id}")
                 current_game = summary.get("gameextrainfo")
                 status_text = {
                     0: "Offline",
@@ -112,8 +118,19 @@ class SteamTracker(commands.Cog):
                     5: "Looking to trade",
                     6: "Looking to play"
                 }.get(summary.get("personastate", 0), "Unknown")
-                status_line = f"{summary.get('personaname', f'ID:{steam_id}')} — {current_game if current_game else status_text}"
-                lines.append(status_line)
+
+                display_status = current_game if current_game else status_text
+                names.append(personaname)
+                statuses.append(display_status)
+
+                if current_game and summary.get("gameid") and summary.get("img_icon_url"):
+                    app_id = summary["gameid"]
+                    icon_hash = summary["img_icon_url"]
+                    icon_url = f"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{app_id}/{icon_hash}.jpg"
+                    icons.append(f"[🖼️]({icon_url})")
+                else:
+                    icons.append("—")
+
                 # Track the most recently active game for thumbnail
                 if current_game and any(name in current_game.lower() for name in TRACKED_GAMES):
                     last_played = summary.get("lastlogoff", 0)
@@ -122,14 +139,15 @@ class SteamTracker(commands.Cog):
                         most_recent_game = current_game
                         most_recent_summary = summary
 
-                # Update last_statuses for this user
                 last_game = self.last_statuses.get(user_id)
                 current_game_lower = current_game.lower() if current_game else None
                 if last_game != current_game_lower:
                     self.last_statuses[user_id] = current_game_lower
 
             embed = discord.Embed(title="Steam Game Tracking", color=discord.Color.green())
-            embed.description = "\n".join(lines) if lines else "No tracked users."
+            embed.add_field(name="👤 Person", value="\n".join(names) or "—", inline=True)
+            embed.add_field(name="🎮 Status", value="\n".join(statuses) or "—", inline=True)
+            embed.add_field(name="📸 Icon", value="\n".join(icons) or "—", inline=True)
             if most_recent_summary:
                 app_id = most_recent_summary.get("gameid")
                 icon_hash = most_recent_summary.get("img_icon_url")
