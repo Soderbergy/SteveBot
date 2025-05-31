@@ -5,6 +5,7 @@ import json
 import aiohttp
 import asyncio
 import logging
+from discord import app_commands
 
 logger = logging.getLogger("S.T.E.V.E")
 
@@ -46,13 +47,13 @@ class SteamTracker(commands.Cog):
 
             try:
                 summary = await self.fetch_player_summary(steam_id)
-                logger.info(f"Fetched summary for {steam_id}: {summary}")
+                # Removed noisy summary fetch log
                 current_game = summary.get("gameextrainfo")
 
                 TRACKED_GAMES = ["squad", "dayz", "rainbow six siege"]
 
                 if current_game and any(name in current_game.lower() for name in TRACKED_GAMES) and last_game != current_game.lower():
-                    logger.info(f"Match found for {summary['personaname']} playing {current_game}")
+                    logger.info(f"Match found for {summary.get('personaname', 'Unknown User')} playing {current_game}")
                     # Post notification
                     try:
                         channel = await self.bot.fetch_channel(discord_channel_id)
@@ -86,7 +87,7 @@ class SteamTracker(commands.Cog):
                             self.active_embeds[embed_key] = message.id
                     self.last_statuses[user_id] = current_game.lower()
                 elif not current_game:
-                    logger.info(f"{summary['personaname']} is not currently in a tracked game.")
+                    # logger.info(f"{summary['personaname']} is not currently in a tracked game.")
                     # Clear user from active embeds
                     for (channel_id, game_name), message_id in list(self.active_embeds.items()):
                         if channel_id != discord_channel_id:
@@ -109,8 +110,6 @@ class SteamTracker(commands.Cog):
 
             except Exception as e:
                 logger.warning(f"Error checking Steam status for {steam_id}: {e}")
-
-    from discord import app_commands
 
     @app_commands.command(name="addsteamtrack", description="Track someone by Steam ID")
     @app_commands.checks.has_permissions(administrator=True)
