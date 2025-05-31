@@ -53,9 +53,17 @@ class SteamTracker(commands.Cog):
                 if current_game and any(name in current_game.lower() for name in TRACKED_GAMES) and last_game != current_game.lower():
                     logger.info(f"Match found for {summary['personaname']} playing {current_game}")
                     # Post notification
-                    channel = self.bot.get_channel(discord_channel_id)
-                    if not channel:
-                        logger.warning(f"Could not find Discord channel with ID {discord_channel_id}.")
+                    try:
+                        channel = await self.bot.fetch_channel(discord_channel_id)
+                    except discord.NotFound:
+                        logger.warning(f"Channel ID {discord_channel_id} not found (NotFound).")
+                        channel = None
+                    except discord.Forbidden:
+                        logger.warning(f"No permission to access channel ID {discord_channel_id}.")
+                        channel = None
+                    except Exception as e:
+                        logger.warning(f"Unexpected error fetching channel {discord_channel_id}: {e}")
+                        channel = None
                     if channel:
                         logger.info(f"Sending message to channel {channel.id} about {summary['personaname']} launching {current_game}")
                         await channel.send(f"🎮 **{summary['personaname']}** just launched **{current_game}**!")
