@@ -45,17 +45,20 @@ class SteamTracker(commands.Cog):
 
             try:
                 summary = await self.fetch_player_summary(steam_id)
+                logger.info(f"Fetched summary for {steam_id}: {summary}")
                 current_game = summary.get("gameextrainfo")
 
                 TRACKED_GAMES = ["squad", "dayz", "rainbow six siege"]
 
-                if current_game and current_game.lower() in TRACKED_GAMES and last_game != current_game.lower():
+                if current_game and any(name in current_game.lower() for name in TRACKED_GAMES) and last_game != current_game.lower():
+                    logger.info(f"Match found for {summary['personaname']} playing {current_game}")
                     # Post notification
                     channel = self.bot.get_channel(discord_channel_id)
                     if channel:
                         await channel.send(f"🎮 **{summary['personaname']}** just launched **{current_game}**!")
                     self.last_statuses[user_id] = current_game.lower()
                 elif not current_game:
+                    logger.info(f"{summary['personaname']} is not currently in a tracked game.")
                     self.last_statuses[user_id] = None
 
             except Exception as e:
