@@ -104,7 +104,7 @@ class SteamTracker(commands.Cog):
             # Build embed content for the channel
             names = []
             statuses = []
-            icons = []
+            # icons = []
             most_recent_game = None
             most_recent_summary = None
             most_recent_time = 0
@@ -114,7 +114,7 @@ class SteamTracker(commands.Cog):
                 if not summary:
                     names.append(f"ID:{steam_id}")
                     statuses.append("Unknown")
-                    icons.append("—")
+                    # icons.append("—")
                     continue
 
                 personaname = summary.get("personaname", f"ID:{steam_id}")
@@ -133,7 +133,7 @@ class SteamTracker(commands.Cog):
                 names.append(personaname)
                 statuses.append(display_status)
 
-                icons.append("—")
+                # icons.append("—")
 
                 # Track the most recently active game for thumbnail
                 if current_game and any(name in current_game.lower() for name in TRACKED_GAMES):
@@ -151,7 +151,7 @@ class SteamTracker(commands.Cog):
             embed = discord.Embed(title="Steam Game Tracking", color=discord.Color.green())
             embed.add_field(name="👤 Person", value="\n".join(names) or "—", inline=True)
             embed.add_field(name="🎮 Status", value="\n".join(statuses) or "—", inline=True)
-            embed.add_field(name="📸 Icon", value="\n".join(icons) or "—", inline=True)
+            # embed.add_field(name="📸 Icon", value="\n".join(icons) or "—", inline=True)
             # Fetch or create the embed message for this channel
             message_id = self.channel_embeds.get(str(channel_id))
             channel = None
