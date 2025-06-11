@@ -119,22 +119,19 @@ class YouTubeAudio(commands.Cog):
             self.saved_channel_id = None
             self.saved_message_id = None
 
-    # Lavalink node setup
+    # Lavalink node setup (Wavelink v2 syntax)
     async def ensure_lavalink(self):
         if self.lavalink_ready:
             return
-        # Only set up the node once per cog
         try:
-            if not wavelink.NodePool.get_nodes():
-                # Connect a Lavalink node; update host/port/password as needed
-                await wavelink.NodePool.create_node(
-                    bot=self.bot,
-                    host='localhost',
-                    port=2333,
-                    password='youshallnotpass',
-                    https=False
+            if not self.lavalink_ready:
+                await wavelink.NodePool.connect(
+                    client=self.bot,
+                    nodes=[
+                        wavelink.Node(uri="http://localhost:2333", password="youshallnotpass")
+                    ]
                 )
-            self.node = wavelink.NodePool.get_node()
+                self.node = wavelink.NodePool.get_node()
             self.lavalink_ready = True
             logger.info("Connected to Lavalink node.")
         except Exception as e:
@@ -150,10 +147,8 @@ class YouTubeAudio(commands.Cog):
                     query = self.get_spotify_track_title(spotify_id)
                     if not query:
                         return None
-            tracks = await wavelink.YouTubeTrack.search(query, return_first=True)
-            if not tracks:
-                return None
-            return tracks
+            tracks = await wavelink.Playable.search(query)
+            return tracks[0] if tracks else None
         except Exception as e:
             logger.error(f"Lavalink search failed: {e}")
             return None
@@ -183,19 +178,9 @@ class YouTubeAudio(commands.Cog):
             await interaction.channel.send(f"🎶 Now playing: **{item.title}**")
 
         logger.info(f"Playing Lavalink track: {item.title}")
-        # Ensure we have a Lavalink player
-        if not self.vc or not hasattr(self.vc, "play"):
-            # Connect or get a Wavelink player
-            self.vc = await wavelink.Player.connect(item.requester.voice.channel)
-        elif not self.vc.is_connected():
-            await self.vc.connect(item.requester.voice.channel)
-
-        def after_playback(_):
-            fut = self.bot.loop.create_task(self.play_next())
-            try:
-                fut.add_done_callback(lambda f: f.exception())
-            except Exception:
-                pass
+        # Ensure we have a Lavalink player (Wavelink v2)
+        if not self.vc or not self.vc.is_connected():
+            self.vc = await item.requester.voice.channel.connect(cls=wavelink.Player)
 
         # Play the track
         await self.vc.play(item.track)
@@ -326,10 +311,10 @@ class YouTubeAudio(commands.Cog):
             except Exception as e:
                 logger.error(f"Failed to post Now Playing embed on first queue: {e}")
 
-        # Lavalink player connection logic
-        if not self.vc or not hasattr(self.vc, "play") or not self.vc.is_connected():
+        # Lavalink player connection logic (Wavelink v2)
+        if not self.vc or not self.vc.is_connected():
             try:
-                self.vc = await wavelink.Player.connect(message.author.voice.channel)
+                self.vc = await message.author.voice.channel.connect(cls=wavelink.Player)
             except Exception as e:
                 logger.error(f"Failed to connect Lavalink player: {e}")
                 await message.channel.send("❌ Failed to connect to a Lavalink node.")
