@@ -2,23 +2,37 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import asyncio
-import yt_dlp
 import logging
 import os
 import json
 from datetime import datetime, timedelta
+import wavelink
+import re
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 
 logger = logging.getLogger("S.T.E.V.E")
 
-COOKIE_WARNING_THRESHOLD = timedelta(days=3)
 
 class MusicQueueItem:
-    def __init__(self, url, title, thumbnail, requester, stream_url):
-        self.url = url
-        self.title = title
-        self.thumbnail = thumbnail
+    def __init__(self, track, requester):
+        self.track = track  # Lavalink track object
         self.requester = requester
-        self.stream_url = stream_url
+
+    @property
+    def url(self):
+        return self.track.uri if hasattr(self.track, "uri") else None
+
+    @property
+    def title(self):
+        return self.track.title
+
+    @property
+    def thumbnail(self):
+        # For YouTube tracks, construct the thumbnail URL from track info
+        if hasattr(self.track, "identifier"):
+            return f"https://img.youtube.com/vi/{self.track.identifier}/hqdefault.jpg"
+        return None
 
 class MusicControls(discord.ui.View):
     def __init__(self, player):
@@ -62,6 +76,23 @@ class YouTubeAudio(commands.Cog):
         self.current_thumbnail = None
         self.current_item = None
         self.load_music_setup()
+        self.lavalink_ready = False
+        self.node = None
+
+    def extract_spotify_id(self, url):
+        match = re.search(r'open\.spotify\.com/track/([a-zA-Z0-9]+)', url)
+        return match.group(1) if match else None
+
+    def get_spotify_track_title(self, spotify_id):
+        try:
+            sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials())
+            track = sp.track(spotify_id)
+            artist = track['artists'][0]['name']
+            name = track['name']
+            return f"{artist} - {name}"
+        except Exception as e:
+            logger.error(f"Spotify lookup failed: {e}")
+            return None
     def save_music_setup(self):
         try:
             os.makedirs("data", exist_ok=True)
@@ -88,44 +119,44 @@ class YouTubeAudio(commands.Cog):
             self.saved_channel_id = None
             self.saved_message_id = None
 
-    @tasks.loop(hours=6)
-    async def check_cookie_freshness(self):
+    # Lavalink node setup
+    async def ensure_lavalink(self):
+        if self.lavalink_ready:
+            return
+        # Only set up the node once per cog
         try:
-            cookie_path = "assets/cookies.txt"
-            if not os.path.exists(cookie_path):
-                logger.warning("❌ Cookie check failed: cookies.txt not found.")
-                return
-            last_modified = datetime.fromtimestamp(os.path.getmtime(cookie_path))
-            age = datetime.now() - last_modified
-            if age > COOKIE_WARNING_THRESHOLD:
-                warning_msg = f"⚠️ The cookies.txt file is {age.days} days old and may soon expire. Please refresh it with /uploadcookies."
-                logger.warning(warning_msg)
-                if self.music_channel:
-                    await self.music_channel.send(warning_msg)
-        except Exception as e:
-            logger.error(f"Error checking cookie freshness: {e}")
-
-    def search_youtube(self, query):
-        with yt_dlp.YoutubeDL({
-            'format': 'bestaudio[ext=m4a]/bestaudio/best',
-            'noplaylist': True,
-            'quiet': True,
-            'cookiefile': 'assets/cookies.txt'
-        }) as ydl:
-            try:
-                info = ydl.extract_info(query, download=False)
-                if 'entries' in info:
-                    info = info['entries'][0]
-                return MusicQueueItem(
-                    url=info['id'],
-                    title=info['title'],
-                    thumbnail=info['thumbnail'],
-                    requester=None,
-                    stream_url=info['url']
+            if not wavelink.NodePool.get_nodes():
+                # Connect a Lavalink node; update host/port/password as needed
+                await wavelink.NodePool.create_node(
+                    bot=self.bot,
+                    host='localhost',
+                    port=2333,
+                    password='youshallnotpass',
+                    https=False
                 )
-            except Exception as e:
-                logger.error(f"YouTube search failed: {e}")
+            self.node = wavelink.NodePool.get_node()
+            self.lavalink_ready = True
+            logger.info("Connected to Lavalink node.")
+        except Exception as e:
+            logger.error(f"Failed to connect to Lavalink node: {e}")
+            self.lavalink_ready = False
+
+    async def search_track(self, query):
+        await self.ensure_lavalink()
+        try:
+            if "open.spotify.com/track/" in query:
+                spotify_id = self.extract_spotify_id(query)
+                if spotify_id:
+                    query = self.get_spotify_track_title(spotify_id)
+                    if not query:
+                        return None
+            tracks = await wavelink.YouTubeTrack.search(query, return_first=True)
+            if not tracks:
                 return None
+            return tracks
+        except Exception as e:
+            logger.error(f"Lavalink search failed: {e}")
+            return None
 
     async def play_next(self, interaction: discord.Interaction = None):
         if not self.queue:
@@ -151,13 +182,27 @@ class YouTubeAudio(commands.Cog):
         if interaction:
             await interaction.channel.send(f"🎶 Now playing: **{item.title}**")
 
-        logger.info(f"Streaming from URL: {item.stream_url}")
-        source = discord.FFmpegPCMAudio(item.stream_url, before_options="-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5", options="-vn")
-        self.vc.play(source, after=lambda e: self.bot.loop.create_task(self.play_next()))
+        logger.info(f"Playing Lavalink track: {item.title}")
+        # Ensure we have a Lavalink player
+        if not self.vc or not hasattr(self.vc, "play"):
+            # Connect or get a Wavelink player
+            self.vc = await wavelink.Player.connect(item.requester.voice.channel)
+        elif not self.vc.is_connected():
+            await self.vc.connect(item.requester.voice.channel)
+
+        def after_playback(_):
+            fut = self.bot.loop.create_task(self.play_next())
+            try:
+                fut.add_done_callback(lambda f: f.exception())
+            except Exception:
+                pass
+
+        # Play the track
+        await self.vc.play(item.track)
 
         embed = discord.Embed(title="Now Playing", description=item.title, color=discord.Color.green())
         embed.set_image(url=item.thumbnail)
-        self.current_thumbnail = item.thumbnail  # optional for backward compatibility
+        self.current_thumbnail = item.thumbnail
 
         # Format updated upcoming queue
         queue_preview = ""
@@ -173,7 +218,7 @@ class YouTubeAudio(commands.Cog):
                 await self.now_playing_msg.edit(embed=embed, view=MusicControls(self))
             else:
                 self.now_playing_msg = await self.music_channel.send(embed=embed, view=MusicControls(self))
-                self.save_music_setup()  # Save message ID if created here
+                self.save_music_setup()
         except Exception as e:
             logger.error(f"Failed to update Now Playing message: {e}")
 
@@ -201,7 +246,6 @@ class YouTubeAudio(commands.Cog):
                 self.now_playing_msg = await self.music_channel.fetch_message(self.saved_message_id)
             except Exception as e:
                 logger.warning(f"Could not fetch saved Now Playing message: {e}")
-        self.check_cookie_freshness.start()
         logger.info("YouTubeAudio cog ready.")
 
     @commands.Cog.listener()
@@ -224,18 +268,15 @@ class YouTubeAudio(commands.Cog):
             await loading_msg.delete()
             return
 
-        # Detect if the query is a YouTube link
-        if "youtube.com/watch" in query or "youtu.be/" in query:
-            item = self.search_youtube(query)
-        else:
-            item = self.search_youtube(f"ytsearch:{query}")
-        if not item:
+        # Lavalink search
+        track = await self.search_track(query)
+        if not track:
             await loading_msg.edit(content="❌ Could not find a result for that query.")
             await asyncio.sleep(5)
             await loading_msg.delete()
             return
 
-        item.requester = message.author
+        item = MusicQueueItem(track, message.author)
         self.queue.append(item)
         await loading_msg.edit(content=f"✅ Queued: **{item.title}**", delete_after=5)
 
@@ -285,28 +326,18 @@ class YouTubeAudio(commands.Cog):
             except Exception as e:
                 logger.error(f"Failed to post Now Playing embed on first queue: {e}")
 
-        if not self.vc or not self.vc.is_connected():
-            self.vc = await message.author.voice.channel.connect()
+        # Lavalink player connection logic
+        if not self.vc or not hasattr(self.vc, "play") or not self.vc.is_connected():
+            try:
+                self.vc = await wavelink.Player.connect(message.author.voice.channel)
+            except Exception as e:
+                logger.error(f"Failed to connect Lavalink player: {e}")
+                await message.channel.send("❌ Failed to connect to a Lavalink node.")
+                return
 
         if not self.is_playing:
             await self.play_next()
 
-    @app_commands.command(name="uploadcookies", description="Upload a new cookies.txt file for YouTube access.")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def upload_cookies(self, interaction: discord.Interaction, attachment: discord.Attachment):
-        if not attachment.filename.endswith(".txt"):
-            await interaction.response.send_message("❌ Please upload a valid cookies.txt file.", ephemeral=True)
-            return
-
-        try:
-            file_bytes = await attachment.read()
-            with open("assets/cookies.txt", "wb") as f:
-                f.write(file_bytes)
-            await interaction.response.send_message("✅ Cookies file updated successfully.", ephemeral=True)
-            logger.info(f"Cookies file updated by {interaction.user.display_name}")
-        except Exception as e:
-            logger.error(f"Failed to save cookies file: {e}")
-            await interaction.response.send_message("❌ Failed to update cookies file.", ephemeral=True)
 
     @app_commands.command(name="setupmusic", description="Setup the music channel automatically.")
     @app_commands.checks.has_permissions(administrator=True)
@@ -344,8 +375,3 @@ class YouTubeAudio(commands.Cog):
 async def setup(bot):
     cog = YouTubeAudio(bot)
     await bot.add_cog(cog)
-    # Ensure manual command registration for app commands if needed
-    try:
-        bot.tree.add_command(cog.show_queue)
-    except Exception:
-        pass
