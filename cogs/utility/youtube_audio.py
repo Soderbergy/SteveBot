@@ -119,19 +119,12 @@ class YouTubeAudio(commands.Cog):
             self.saved_channel_id = None
             self.saved_message_id = None
 
-    # Lavalink node setup (Wavelink v2 syntax)
     async def ensure_lavalink(self):
         if self.lavalink_ready:
             return
         try:
-            if not self.lavalink_ready:
-                await wavelink.NodePool.connect(
-                    client=self.bot,
-                    nodes=[
-                        wavelink.Node(uri="http://localhost:2333", password="youshallnotpass")
-                    ]
-                )
-                self.node = wavelink.NodePool.get_node()
+            self.node = wavelink.Node(uri="http://localhost:2333", password="youshallnotpass")
+            await wavelink.Pool.connect(client=self.bot, nodes=[self.node])
             self.lavalink_ready = True
             logger.info("Connected to Lavalink node.")
         except Exception as e:
@@ -179,8 +172,9 @@ class YouTubeAudio(commands.Cog):
 
         logger.info(f"Playing Lavalink track: {item.title}")
         # Ensure we have a Lavalink player (Wavelink v2)
-        if not self.vc or not self.vc.is_connected():
-            self.vc = await item.requester.voice.channel.connect(cls=wavelink.Player)
+        self.vc = self.node.get_player(guild=item.requester.guild)
+        if not self.vc.is_connected():
+            await self.vc.connect(item.requester.voice.channel)
 
         # Play the track
         await self.vc.play(item.track)
@@ -312,9 +306,10 @@ class YouTubeAudio(commands.Cog):
                 logger.error(f"Failed to post Now Playing embed on first queue: {e}")
 
         # Lavalink player connection logic (Wavelink v2)
-        if not self.vc or not self.vc.is_connected():
+        self.vc = self.node.get_player(guild=message.guild)
+        if not self.vc.is_connected():
             try:
-                self.vc = await message.author.voice.channel.connect(cls=wavelink.Player)
+                await self.vc.connect(message.author.voice.channel)
             except Exception as e:
                 logger.error(f"Failed to connect Lavalink player: {e}")
                 await message.channel.send("❌ Failed to connect to a Lavalink node.")
