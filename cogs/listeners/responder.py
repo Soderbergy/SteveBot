@@ -121,6 +121,21 @@ class Responder(commands.Cog):
                     await message.channel.send("You're not in a voice channel. How do I know where to teleport them?")
                 handled = True
 
+            elif "clean up" in message.content.lower():
+                def is_steve_related(m):
+                    return (m.author == self.bot.user or self.bot.user in m.mentions or
+                            (m.reference and m.reference.resolved and m.reference.resolved.author == self.bot.user))
+
+                try:
+                    deleted = await message.channel.purge(limit=50, check=is_steve_related, bulk=True)
+                    await message.channel.send(f"🧹 Cleaned up {len(deleted)} messages from this Steve session.", delete_after=5)
+                except discord.Forbidden:
+                    await message.channel.send("I can't delete messages here. Lame.")
+                except Exception as e:
+                    await message.channel.send("Something went kaboom while cleaning.")
+                    print(f"Error cleaning up messages: {e}")
+                return
+
             if not handled:
                 if message.author.id == 615975081226534928 and random.random() < 0.3:
                     await message.channel.send(random.choice([
