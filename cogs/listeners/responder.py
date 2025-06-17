@@ -17,6 +17,17 @@ class Responder(commands.Cog):
         if message.author.bot:
             return
 
+        # Handle "@steve clean up" command
+        if message.content.lower().strip() == f"<@{self.bot.user.id}> clean up":
+            def is_steve_response(m):
+                return m.author == self.bot.user and m.reference and m.reference.message_id == message.id
+
+            async for msg in message.channel.history(limit=200):
+                if msg.author == self.bot.user and (msg.reference and msg.reference.message_id == message.id):
+                    await msg.delete()
+            await message.delete()
+            return
+
         # Check if the bot is mentioned or replied to
         if self.bot.user in message.mentions or (message.reference and message.reference.resolved and message.reference.resolved.author == self.bot.user):
             if message.author.id == 615975081226534928 and random.random() < 0.3:
