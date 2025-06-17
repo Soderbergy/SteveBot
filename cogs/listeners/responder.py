@@ -32,7 +32,7 @@ class Responder(commands.Cog):
                     try:
                         await msg.delete()
                         deleted += 1
-                        await discord.utils.sleep_until(discord.utils.utcnow() + discord.utils.timedelta(milliseconds=300))
+                        await asyncio.sleep(0.3)
                     except discord.NotFound:
                         pass
                     except discord.HTTPException as e:
