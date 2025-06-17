@@ -19,12 +19,18 @@ class Responder(commands.Cog):
 
         # Handle "@steve clean up" command
         if message.content.lower().strip() == f"<@{self.bot.user.id}> clean up":
-            def is_steve_response(m):
-                return m.author == self.bot.user and m.reference and m.reference.message_id == message.id
+            def is_steve_convo(m):
+                return (
+                    (m.author == self.bot.user and m.reference and m.reference.resolved and m.reference.resolved.author == message.author) or
+                    (m.author == message.author and (self.bot.user in m.mentions or (m.reference and m.reference.resolved and m.reference.resolved.author == self.bot.user)))
+                )
 
-            async for msg in message.channel.history(limit=200):
-                if msg.author == self.bot.user and (msg.reference and msg.reference.message_id == message.id):
+            deleted = 0
+            async for msg in message.channel.history(limit=100):
+                if is_steve_convo(msg):
                     await msg.delete()
+                    deleted += 1
+
             await message.delete()
             return
 
@@ -38,7 +44,6 @@ class Responder(commands.Cog):
                 ]))
                 return
             try:
-                prompt = f"You are Steve, a sarcastic, slightly unhinged but loyal Discord bot. You roast users with chaotic charm, drop clever comebacks, and provide helpful answers when needed—like if Deadpool coded Clippy. Stay in-character and witty.\nUser: \"{message.content}\""
                 response = await self.openai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
@@ -49,7 +54,7 @@ class Responder(commands.Cog):
                     temperature=0.85
                 )
                 reply = response.choices[0].message.content.strip()
-                await message.channel.send(reply)
+                await message.channel.send(reply, reference=message)
             except Exception as e:
                 await message.channel.send("🤖 Error processing my snarky comeback. Try again later.")
                 print(f"OpenAI error: {e}")
