@@ -25,6 +25,13 @@ class Responder(commands.Cog):
             if "mute" in message.content.lower() and message.mentions:
                 for member in message.mentions:
                     if member != self.bot.user and isinstance(member, discord.Member):
+                        if message.author.id == 123456789012345678 and random.random() < 0.4:
+                            await message.channel.send(random.choice([
+                                "As you command, almighty Levii. 🔱",
+                                "Your wish is my code, Overlord.",
+                                "Executing royal decree. 👑",
+                                "The mortal shall be muted, O Powerful One.",
+                            ]))
                         if member.voice and not member.voice.mute:
                             try:
                                 await member.edit(mute=True)
@@ -42,6 +49,13 @@ class Responder(commands.Cog):
             elif "disconnect" in message.content.lower() and message.mentions:
                 for member in message.mentions:
                     if member != self.bot.user and isinstance(member, discord.Member):
+                        if message.author.id == 123456789012345678 and random.random() < 0.4:
+                            await message.channel.send(random.choice([
+                                "As you command, almighty Levii. 🔱",
+                                "Your wish is my code, Overlord.",
+                                "Executing royal decree. 👑",
+                                "The mortal shall be disconnected, O Powerful One.",
+                            ]))
                         if member.voice:
                             try:
                                 await member.edit(voice_channel=None)
@@ -59,6 +73,13 @@ class Responder(commands.Cog):
             elif "deafen" in message.content.lower() and message.mentions:
                 for member in message.mentions:
                     if member != self.bot.user and isinstance(member, discord.Member):
+                        if message.author.id == 123456789012345678 and random.random() < 0.4:
+                            await message.channel.send(random.choice([
+                                "As you command, almighty Levii. 🔱",
+                                "Your wish is my code, Overlord.",
+                                "Executing royal decree. 👑",
+                                "The mortal shall be deafened, O Powerful One.",
+                            ]))
                         if member.voice and not member.voice.deaf:
                             try:
                                 await member.edit(deafen=True)
@@ -78,6 +99,13 @@ class Responder(commands.Cog):
                     target_channel = message.author.voice.channel
                     for member in message.mentions:
                         if member != self.bot.user and isinstance(member, discord.Member):
+                            if message.author.id == 123456789012345678 and random.random() < 0.4:
+                                await message.channel.send(random.choice([
+                                    "As you command, almighty Levii. 🔱",
+                                    "Your wish is my code, Overlord.",
+                                    "Executing royal decree. 👑",
+                                    "The mortal shall be moved, O Powerful One.",
+                                ]))
                             if member.voice:
                                 try:
                                     await member.edit(voice_channel=target_channel)
@@ -94,6 +122,13 @@ class Responder(commands.Cog):
                 handled = True
 
             if not handled:
+                if message.author.id == 123456789012345678 and random.random() < 0.3:
+                    await message.channel.send(random.choice([
+                        "Yes Levii, I'm always here for emotional damage delivery. 💥",
+                        "Say the word, and I'll roast them into ash.",
+                        "Oh hey boss! Got another soul to smite?",
+                    ]))
+                    return
                 try:
                     prompt = f"You are Steve, a sarcastic, slightly unhinged but loyal Discord bot. You roast users with chaotic charm, drop clever comebacks, and provide helpful answers when needed—like if Deadpool coded Clippy. Stay in-character and witty.\nUser: \"{message.content}\""
                     response = await self.openai_client.chat.completions.create(
