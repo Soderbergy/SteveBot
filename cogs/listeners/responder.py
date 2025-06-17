@@ -108,7 +108,7 @@ class Responder(commands.Cog):
             if not handled:
                 try:
                     prompt = f"You are a sarcastic but helpful Discord bot named Steve. Respond to this message:\n\"{message.content}\""
-                    response = await self.client.chat.completions.create(
+                    response = self.client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": "You are a Discord bot named Steve with a witty, playful personality."},
