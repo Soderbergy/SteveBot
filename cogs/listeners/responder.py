@@ -24,9 +24,6 @@ class Responder(commands.Cog):
             # Check for mute command
             if "mute" in message.content.lower() and message.mentions:
                 for member in message.mentions:
-                    if member == self.bot.user:
-                        await message.channel.send("Nice try. I’m too powerful to be controlled like that. 😎")
-                        continue
                     if member != self.bot.user and isinstance(member, discord.Member):
                         if member.voice and not member.voice.mute:
                             try:
@@ -44,9 +41,6 @@ class Responder(commands.Cog):
             # Check for disconnect command
             elif "disconnect" in message.content.lower() and message.mentions:
                 for member in message.mentions:
-                    if member == self.bot.user:
-                        await message.channel.send("Nice try. I’m too powerful to be controlled like that. 😎")
-                        continue
                     if member != self.bot.user and isinstance(member, discord.Member):
                         if member.voice:
                             try:
@@ -64,9 +58,6 @@ class Responder(commands.Cog):
             # Check for deafen command
             elif "deafen" in message.content.lower() and message.mentions:
                 for member in message.mentions:
-                    if member == self.bot.user:
-                        await message.channel.send("Nice try. I’m too powerful to be controlled like that. 😎")
-                        continue
                     if member != self.bot.user and isinstance(member, discord.Member):
                         if member.voice and not member.voice.deaf:
                             try:
@@ -86,9 +77,6 @@ class Responder(commands.Cog):
                 if message.author.voice:
                     target_channel = message.author.voice.channel
                     for member in message.mentions:
-                        if member == self.bot.user:
-                            await message.channel.send("Nice try. I’m too powerful to be controlled like that. 😎")
-                            continue
                         if member != self.bot.user and isinstance(member, discord.Member):
                             if member.voice:
                                 try:
