@@ -4,6 +4,7 @@ import random
 from openai import AsyncOpenAI
 import os
 from dotenv import load_dotenv
+import asyncio
 
 
 class Responder(commands.Cog):
@@ -28,10 +29,20 @@ class Responder(commands.Cog):
             deleted = 0
             async for msg in message.channel.history(limit=100):
                 if is_steve_convo(msg):
-                    await msg.delete()
-                    deleted += 1
+                    try:
+                        await msg.delete()
+                        deleted += 1
+                        await discord.utils.sleep_until(discord.utils.utcnow() + discord.utils.timedelta(milliseconds=300))
+                    except discord.NotFound:
+                        pass
+                    except discord.HTTPException as e:
+                        print(f"Rate limit or HTTP error while deleting message: {e}")
+                        await asyncio.sleep(1)
 
-            await message.delete()
+            try:
+                await message.delete()
+            except discord.NotFound:
+                pass
             return
 
         # Check if the bot is mentioned or replied to
