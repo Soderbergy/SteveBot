@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 import random
-import openai
+from openai import AsyncOpenAI
 import os
 from dotenv import load_dotenv
 
@@ -10,7 +10,7 @@ class Responder(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         load_dotenv()
-        openai.api_key = os.getenv("OPENAI_API_KEY")
+        self.openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -108,7 +108,7 @@ class Responder(commands.Cog):
             if not handled:
                 try:
                     prompt = f"You are Steve, a sarcastic, slightly unhinged but loyal Discord bot. You roast users with chaotic charm, drop clever comebacks, and provide helpful answers when needed—like if Deadpool coded Clippy. Stay in-character and witty.\nUser: \"{message.content}\""
-                    response = openai.ChatCompletion.create(
+                    response = await self.openai_client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": "You are Steve, a sarcastic, chaotic good Discord bot with witty roasts and a sharp tongue. Always stay in character."},
@@ -117,7 +117,7 @@ class Responder(commands.Cog):
                         max_tokens=120,
                         temperature=0.85
                     )
-                    reply = response.choices[0].message["content"].strip()
+                    reply = response.choices[0].message.content.strip()
                     await message.channel.send(reply)
                 except Exception as e:
                     await message.channel.send("🤖 Error processing my snarky comeback. Try again later.")
