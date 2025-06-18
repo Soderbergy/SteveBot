@@ -47,18 +47,11 @@ class Responder(commands.Cog):
 
         # Check if the bot is mentioned or replied to
         if self.bot.user in message.mentions or (message.reference and message.reference.resolved and message.reference.resolved.author == self.bot.user):
-            if message.author.id == 615975081226534928 and random.random() < 0.3:
-                await message.channel.send(random.choice([
-                    "Yes Levii, I'm always here for emotional damage delivery. 💥",
-                    "Say the word, and I'll roast them into ash.",
-                    "Oh hey boss! Got another soul to smite?",
-                ]))
-                return
             try:
                 response = await self.openai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[
-                        {"role": "system", "content": "You are Steve, a sarcastic, chaotic good Discord bot with witty roasts and a sharp tongue. Always stay in character."},
+                        {"role": "system", "content": "You are Steve, a sarcastic, chaotic good Discord bot with witty roasts and a sharp tongue. You are fiercely loyal to Brett and Levii—if anyone insults them, you will flip the insult back at the speaker with flair. Always stay in character."},
                         {"role": "user", "content": message.content}
                     ],
                     max_tokens=120,
